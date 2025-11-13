@@ -226,15 +226,19 @@ if st.session_state.selected_movie_id:
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-st.subheader("📖 鑑賞記録一覧")
+st.subheader("📖 鑑賞記録")
 try:
     records = load_records(sheet)
     if records:
         df = pd.DataFrame(records)
+        # 👇ここでインデックスを1から採番表示
+        df.index = range(1, len(df) + 1)
+        df.index.name = "No."
         st.dataframe(df, use_container_width=True)
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
