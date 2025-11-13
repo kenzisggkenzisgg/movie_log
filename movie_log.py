@@ -8,7 +8,7 @@ from gspread.exceptions import WorksheetNotFound
 from google.oauth2.service_account import Credentials
 
 # =========================
-# 設定（Secrets から取得・不足時は停止）
+# Secrets 設定（必須チェックあり）
 # =========================
 def require_secret(key: str, hint: str = ""):
     try:
@@ -49,9 +49,9 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
     try:
         ws = ss.worksheet(title)
     except WorksheetNotFound:
-        ws = ss.add_worksheet(title=title, rows="2000", cols="12")
-        ws.update("A1:H1", [[
-            "No.", "映画を見た日", "映画名", "公開日", "監督", "評価", "コメント", "TMDB_ID"
+        ws = ss.add_worksheet(title=title, rows="2000", cols="10")
+        ws.update("A1:F1", [[
+            "映画を見た日", "映画名", "公開日", "監督", "評価", "コメント"
         ]])
     return ws
 
@@ -61,7 +61,7 @@ sheet = get_or_create_worksheet(SPREADSHEET_ID, SHEET_NAME)
 # セッション状態
 # =========================
 if "candidates" not in st.session_state:
-    st.session_state.candidates = []   # TMDB 検索結果（最大5件）
+    st.session_state.candidates = []
 if "selected_movie_id" not in st.session_state:
     st.session_state.selected_movie_id = None
 if "last_query" not in st.session_state:
@@ -70,7 +70,7 @@ if "last_query" not in st.session_state:
 # =========================
 # UI
 # =========================
-st.title("🎬 映画情報管理アプリ（Googleスプレッドシート版）")
+st.title("🎬 映画鑑賞記録アプリ")
 
 with st.container():
     st.subheader("映画タイトル検索")
@@ -82,21 +82,19 @@ with st.container():
             if not movie_title_input:
                 st.warning("タイトルを入力してください。")
             else:
-                # TMDB 検索（類似度は使わず、上位から最大5件）
                 search_url = "https://api.themoviedb.org/3/search/movie"
-                s_params = {
+                params = {
                     "api_key": TMDB_API_KEY,
                     "query": movie_title_input,
                     "include_adult": "false",
                     "language": "ja",
                 }
-                s_res = requests.get(search_url, params=s_params)
-                if s_res.status_code != 200:
+                res = requests.get(search_url, params=params)
+                if res.status_code != 200:
                     st.error("TMDB検索でエラーが発生しました。")
                 else:
-                    data = s_res.json()
-                    results = (data.get("results") or [])[:5]
-                    st.session_state.candidates = results
+                    data = res.json()
+                    st.session_state.candidates = (data.get("results") or [])[:5]
                     st.session_state.selected_movie_id = None
                     st.session_state.last_query = movie_title_input
     with col_clear:
@@ -107,10 +105,10 @@ with st.container():
             st.experimental_rerun()
 
 # =========================
-# 候補表示（最大5件）→ 1つ確定
+# 検索結果 → 1つ確定
 # =========================
 if st.session_state.candidates:
-    st.subheader("🔎 検索結果（最大5件）")
+    st.subheader("🔎 検索結果")
     options = []
     labels = {}
     for r in st.session_state.candidates:
@@ -118,16 +116,15 @@ if st.session_state.candidates:
         title = r.get("title") or r.get("original_title", "N/A")
         orig = r.get("original_title", "")
         year = (r.get("release_date") or "????")[:4]
-        label = f"{title} ({orig}) - {year} [id:{rid}]"
+        label = f"{title} ({orig}) - {year}"
         options.append(rid)
         labels[rid] = label
 
-    # ラジオで選択（既存選択があれば初期選択に反映）
-    if st.session_state.selected_movie_id in options:
-        default_index = options.index(st.session_state.selected_movie_id)
-    else:
-        default_index = 0
-
+    default_index = (
+        options.index(st.session_state.selected_movie_id)
+        if st.session_state.selected_movie_id in options
+        else 0
+    )
     selected_id = st.radio(
         "該当する作品を選択してください",
         options=options,
@@ -144,14 +141,13 @@ if st.session_state.candidates:
 # =========================
 if st.session_state.selected_movie_id:
     movie_id = st.session_state.selected_movie_id
-
-    # 詳細
     d_url = f"https://api.themoviedb.org/3/movie/{movie_id}"
     d_params = {"api_key": TMDB_API_KEY, "language": "ja"}
     d_res = requests.get(d_url, params=d_params)
     if d_res.status_code != 200:
         st.error("TMDB詳細でエラーが発生しました。")
         st.stop()
+
     detail = d_res.json()
     title = detail.get("title", "N/A")
     original_title = detail.get("original_title", "")
@@ -162,7 +158,7 @@ if st.session_state.selected_movie_id:
     overview = detail.get("overview", "N/A")
     poster_path = detail.get("poster_path")
 
-    # クレジット（監督・キャスト）
+    # クレジット
     c_url = f"https://api.themoviedb.org/3/movie/{movie_id}/credits"
     c_params = {"api_key": TMDB_API_KEY, "language": "ja"}
     c_res = requests.get(c_url, params=c_params)
@@ -176,7 +172,7 @@ if st.session_state.selected_movie_id:
         if directors:
             director_name = directors[0].get("name", "N/A")
 
-    # 表示
+    # 詳細表示
     st.subheader(f"{title} ({original_title})")
     cols = st.columns([1, 2])
     with cols[0]:
@@ -190,14 +186,14 @@ if st.session_state.selected_movie_id:
         st.markdown(f"**評価スコア**: {vote_average} /10")
         st.markdown(f"**評価数**: {vote_count} 件")
 
-    st.write("### キャスト情報（上位5名）")
+    st.write("### キャスト情報")
     for actor in cast[:5]:
         name = actor.get("name", "N/A")
         character = actor.get("character", "N/A")
         st.write(f"- {name} ({character})")
 
     # =========================
-    # 鑑賞記録 追加フォーム（Googleスプレッドシート保存）
+    # 鑑賞記録フォーム
     # =========================
     with st.form("entry_form"):
         movie_day = st.date_input("映画を見た日", value=date.today())
@@ -211,18 +207,13 @@ if st.session_state.selected_movie_id:
 
     if submitted:
         try:
-            # 次の No.：ヘッダー1行を含む総行数を取得して、その値をNo.に
-            rows_now = len(sheet.get_all_values())  # 1（ヘッダ）→ 2行目がNo.1、…なので rows_now が次No.
-            next_no = rows_now
             sheet.append_row([
-                next_no,
                 movie_day.strftime("%Y-%m-%d"),
                 title,
                 release_date,
                 director_name,
                 user_rating,
                 user_comment,
-                movie_id,  # 追加：TMDB_ID
             ])
             st.success(f"『{title}』をスプレッドシートに保存しました。")
         except Exception as e:
@@ -233,7 +224,6 @@ if st.session_state.selected_movie_id:
 # =========================
 @st.cache_data(ttl=60)
 def load_records(_sheet):
-    # 1行目をヘッダーとして dict のリストを返す
     return _sheet.get_all_records()
 
 st.subheader("📖 鑑賞記録一覧")
@@ -241,11 +231,10 @@ try:
     records = load_records(sheet)
     if records:
         df = pd.DataFrame(records)
-        df.index = range(1, len(df) + 1)
-        df.index.name = "No."
         st.dataframe(df, use_container_width=True)
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
