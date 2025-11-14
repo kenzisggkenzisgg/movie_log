@@ -198,25 +198,25 @@ if st.session_state.selected_movie_id:
         submitted = st.form_submit_button("スプレッドシートに保存")
 
         if submitted:
-        try:
-            sheet.append_row([
-                movie_day.strftime("%Y-%m-%d"),
-                title,
-                release_date,
-                director_name,
-                user_rating,
-                user_comment,
-            ])
-            st.success(f"『{title}』をスプレッドシートに保存しました。")
-
-            # ▼ 追加：キャッシュ無効化 → 画面を即時再実行
-            load_records.clear()      # @st.cache_data のキャッシュをクリア
             try:
-                st.rerun()            # 新しめのStreamlit
-            except Exception:
-                st.experimental_rerun()  # 旧API互換
-        except Exception as e:
-            st.error(f"保存中にエラーが発生しました: {e}")
+                sheet.append_row([
+                    movie_day.strftime("%Y-%m-%d"),
+                    title,
+                    release_date,
+                    director_name,
+                    user_rating,
+                    user_comment,
+                ])
+                st.success(f"『{title}』をスプレッドシートに保存しました。")
+
+                # ▼ 追加：キャッシュ無効化 → 画面を即時再実行
+                load_records.clear()      # @st.cache_data のキャッシュをクリア
+                try:
+                    st.rerun()            # 新しめのStreamlit
+                except Exception:
+                    st.experimental_rerun()  # 旧API互換
+            except Exception as e:
+                st.error(f"保存中にエラーが発生しました: {e}")
 
 
 # =========================
