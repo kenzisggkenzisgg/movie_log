@@ -1,4 +1,3 @@
-# movie_log.py
 import requests
 import streamlit as st
 import pandas as pd
@@ -70,45 +69,38 @@ if "last_query" not in st.session_state:
 # =========================
 # UI
 # =========================
-st.title("🎬 映画情報管理アプリ（Googleスプレッドシート版）")
+st.title("🎬 映画鑑賞記録")
 
 with st.container():
     st.subheader("映画タイトル検索")
     movie_title_input = st.text_input("映画のタイトルを入力してください", placeholder="例）トップガン")
 
-    col_search, col_clear = st.columns([1, 1])
-    with col_search:
-        if st.button("検索", use_container_width=True):
-            if not movie_title_input:
-                st.warning("タイトルを入力してください。")
+    # 🔍 検索ボタンのみ（クリア削除）
+    if st.button("検索", use_container_width=True):
+        if not movie_title_input:
+            st.warning("タイトルを入力してください。")
+        else:
+            search_url = "https://api.themoviedb.org/3/search/movie"
+            params = {
+                "api_key": TMDB_API_KEY,
+                "query": movie_title_input,
+                "include_adult": "false",
+                "language": "ja",
+            }
+            res = requests.get(search_url, params=params)
+            if res.status_code != 200:
+                st.error("TMDB検索でエラーが発生しました。")
             else:
-                search_url = "https://api.themoviedb.org/3/search/movie"
-                params = {
-                    "api_key": TMDB_API_KEY,
-                    "query": movie_title_input,
-                    "include_adult": "false",
-                    "language": "ja",
-                }
-                res = requests.get(search_url, params=params)
-                if res.status_code != 200:
-                    st.error("TMDB検索でエラーが発生しました。")
-                else:
-                    data = res.json()
-                    st.session_state.candidates = (data.get("results") or [])[:5]
-                    st.session_state.selected_movie_id = None
-                    st.session_state.last_query = movie_title_input
-    with col_clear:
-        if st.button("クリア", use_container_width=True):
-            st.session_state.candidates = []
-            st.session_state.selected_movie_id = None
-            st.session_state.last_query = ""
-            st.experimental_rerun()
+                data = res.json()
+                st.session_state.candidates = (data.get("results") or [])[:5]
+                st.session_state.selected_movie_id = None
+                st.session_state.last_query = movie_title_input
 
 # =========================
 # 検索結果 → 1つ確定
 # =========================
 if st.session_state.candidates:
-    st.subheader("🔎 検索結果（最大5件）")
+    st.subheader("🔎 検索結果")
     options = []
     labels = {}
     for r in st.session_state.candidates:
@@ -186,7 +178,7 @@ if st.session_state.selected_movie_id:
         st.markdown(f"**評価スコア**: {vote_average} /10")
         st.markdown(f"**評価数**: {vote_count} 件")
 
-    st.write("### キャスト情報（上位5名）")
+    st.write("### キャスト情報")
     for actor in cast[:5]:
         name = actor.get("name", "N/A")
         character = actor.get("character", "N/A")
@@ -205,7 +197,7 @@ if st.session_state.selected_movie_id:
         user_comment = st.text_area("感想コメント", value="", height=100)
         submitted = st.form_submit_button("スプレッドシートに保存")
 
-    if submitted:
+        if submitted:
         try:
             sheet.append_row([
                 movie_day.strftime("%Y-%m-%d"),
@@ -216,8 +208,16 @@ if st.session_state.selected_movie_id:
                 user_comment,
             ])
             st.success(f"『{title}』をスプレッドシートに保存しました。")
+
+            # ▼ 追加：キャッシュ無効化 → 画面を即時再実行
+            load_records.clear()      # @st.cache_data のキャッシュをクリア
+            try:
+                st.rerun()            # 新しめのStreamlit
+            except Exception:
+                st.experimental_rerun()  # 旧API互換
         except Exception as e:
             st.error(f"保存中にエラーが発生しました: {e}")
+
 
 # =========================
 # 一覧表示（キャッシュ付き）
@@ -226,16 +226,20 @@ if st.session_state.selected_movie_id:
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-st.subheader("📖 鑑賞記録一覧")
+st.subheader("📖 鑑賞記録")
 try:
     records = load_records(sheet)
     if records:
         df = pd.DataFrame(records)
+        # 👇ここでインデックスを1から採番表示
+        df.index = range(1, len(df) + 1)
+        df.index.name = "No."
         st.dataframe(df, use_container_width=True)
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
