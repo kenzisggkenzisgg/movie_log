@@ -1,3 +1,4 @@
+# movie_log.py
 import requests
 import streamlit as st
 import pandas as pd
@@ -75,7 +76,7 @@ with st.container():
     st.subheader("映画タイトル検索")
     movie_title_input = st.text_input("映画のタイトルを入力してください", placeholder="例）トップガン")
 
-    # 🔍 検索ボタンのみ（クリア削除）
+    # 🔍 検索ボタンのみ（クリアは削除済み）
     if st.button("検索", use_container_width=True):
         if not movie_title_input:
             st.warning("タイトルを入力してください。")
@@ -209,15 +210,14 @@ if st.session_state.selected_movie_id:
                 ])
                 st.success(f"『{title}』をスプレッドシートに保存しました。")
 
-                # ▼ 追加：キャッシュ無効化 → 画面を即時再実行
-                load_records.clear()      # @st.cache_data のキャッシュをクリア
+                # ▼ 追加：キャッシュ全体をクリア → 即時再実行で一覧を最新化
+                st.cache_data.clear()
                 try:
-                    st.rerun()            # 新しめのStreamlit
+                    st.rerun()            # 新API
                 except Exception:
                     st.experimental_rerun()  # 旧API互換
             except Exception as e:
                 st.error(f"保存中にエラーが発生しました: {e}")
-
 
 # =========================
 # 一覧表示（キャッシュ付き）
