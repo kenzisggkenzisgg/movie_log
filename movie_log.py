@@ -70,7 +70,7 @@ if "last_query" not in st.session_state:
 # =========================
 # UI
 # =========================
-st.title("🎬 映画鑑賞記録アプリ")
+st.title("🎬 映画情報管理アプリ（Googleスプレッドシート版）")
 
 with st.container():
     st.subheader("映画タイトル検索")
@@ -108,7 +108,7 @@ with st.container():
 # 検索結果 → 1つ確定
 # =========================
 if st.session_state.candidates:
-    st.subheader("🔎 検索結果")
+    st.subheader("🔎 検索結果（最大5件）")
     options = []
     labels = {}
     for r in st.session_state.candidates:
@@ -186,7 +186,7 @@ if st.session_state.selected_movie_id:
         st.markdown(f"**評価スコア**: {vote_average} /10")
         st.markdown(f"**評価数**: {vote_count} 件")
 
-    st.write("### キャスト情報")
+    st.write("### キャスト情報（上位5名）")
     for actor in cast[:5]:
         name = actor.get("name", "N/A")
         character = actor.get("character", "N/A")
@@ -226,7 +226,7 @@ if st.session_state.selected_movie_id:
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-st.subheader("📖 鑑賞記録")
+st.subheader("📖 鑑賞記録一覧")
 try:
     records = load_records(sheet)
     if records:
