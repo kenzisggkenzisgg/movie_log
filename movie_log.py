@@ -231,9 +231,6 @@ try:
     records = load_records(sheet)
     if records:
         df = pd.DataFrame(records)
-        # 👇ここでインデックスを1から採番表示
-        df.index = range(1, len(df) + 1)
-        df.index.name = "No."
         st.dataframe(df, use_container_width=True)
     else:
         st.write("まだ鑑賞記録はありません。")
