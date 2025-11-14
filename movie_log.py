@@ -1,4 +1,3 @@
-# movie_log.py
 import requests
 import streamlit as st
 import pandas as pd
@@ -42,7 +41,7 @@ credentials = Credentials.from_service_account_info(dict(gsa), scopes=scope)
 client = gspread.authorize(credentials)
 
 # =========================
-# シート準備（なければ作る / 既存に TMDB_ID を追記）
+# シート準備（なければ作る）
 # =========================
 def get_or_create_worksheet(spreadsheet_id: str, title: str):
     ss = client.open_by_key(spreadsheet_id)
@@ -55,17 +54,13 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
         ]])
         return ws
 
-    # 既存ヘッダーに TMDB_ID がなければ追加
+    # 既存ヘッダーに TMDB_ID がなければ追記
     header = ws.row_values(1)
-    if not header:
-        header = ["映画を見た日", "映画名", "公開日", "監督", "評価", "コメント", "TMDB_ID"]
+    if "TMDB_ID" not in header:
+        header = (header + ["TMDB_ID"])[:7]  # 7列目にTMDB_ID
         ws.update("A1:G1", [header])
-    elif "TMDB_ID" not in header:
-        header.append("TMDB_ID")
-        # A1 からヘッダ行を丸ごと更新
-        end_col_letter = chr(ord('A') + len(header) - 1)
-        ws.update(f"A1:{end_col_letter}1", [header])
     return ws
+
 
 sheet = get_or_create_worksheet(SPREADSHEET_ID, SHEET_NAME)
 
@@ -88,7 +83,7 @@ with st.container():
     st.subheader("映画タイトル検索")
     movie_title_input = st.text_input("映画のタイトルを入力してください", placeholder="例）トップガン")
 
-    # 🔍 検索ボタンのみ（クリアは削除）
+    # 🔍 検索ボタンのみ（クリア削除）
     if st.button("検索", use_container_width=True):
         if not movie_title_input:
             st.warning("タイトルを入力してください。")
@@ -144,13 +139,14 @@ if st.session_state.candidates:
 # =========================
 # 詳細表示（確定後）
 # =========================
-def show_movie_detail_by_id(movie_id: int):
+if st.session_state.selected_movie_id:
+    movie_id = st.session_state.selected_movie_id
     d_url = f"https://api.themoviedb.org/3/movie/{movie_id}"
     d_params = {"api_key": TMDB_API_KEY, "language": "ja"}
     d_res = requests.get(d_url, params=d_params)
     if d_res.status_code != 200:
         st.error("TMDB詳細でエラーが発生しました。")
-        return None, None
+        st.stop()
 
     detail = d_res.json()
     title = detail.get("title", "N/A")
@@ -196,16 +192,9 @@ def show_movie_detail_by_id(movie_id: int):
         character = actor.get("character", "N/A")
         st.write(f"- {name} ({character})")
 
-    return title, (release_date, director_name)
-
-if st.session_state.selected_movie_id:
-    show_movie_detail_by_id(st.session_state.selected_movie_id)
-
-# =========================
-# 鑑賞記録フォーム（詳細表示がある時のみ）
-# =========================
-if st.session_state.get("selected_movie_id"):
-    movie_id = int(st.session_state.selected_movie_id)
+    # =========================
+    # 鑑賞記録フォーム
+    # =========================
     with st.form("entry_form"):
         movie_day = st.date_input("映画を見た日", value=date.today())
         user_rating = st.selectbox(
@@ -217,42 +206,20 @@ if st.session_state.get("selected_movie_id"):
         submitted = st.form_submit_button("スプレッドシートに保存")
 
     if submitted:
-        # 詳細を再取得（保存用）
-        d_url = f"https://api.themoviedb.org/3/movie/{movie_id}"
-        d_params = {"api_key": TMDB_API_KEY, "language": "ja"}
-        d_res = requests.get(d_url, params=d_params)
-        if d_res.status_code != 200:
-            st.error("保存前のTMDB詳細取得でエラーが発生しました。")
-        else:
-            detail = d_res.json()
-            title = detail.get("title", "N/A")
-            release_date = detail.get("release_date", "N/A")
+        try:
+            sheet.append_row([
+                movie_day.strftime("%Y-%m-%d"),
+                title,
+                release_date,
+                director_name,
+                user_rating,
+                user_comment,
+                str(movie_id),  # ← ここで TMDB_ID を保存
+            ])
+            st.success(f"『{title}』をスプレッドシートに保存しました。")
+        except Exception as e:
+            st.error(f"保存中にエラーが発生しました: {e}")
 
-            # 監督名取得
-            c_url = f"https://api.themoviedb.org/3/movie/{movie_id}/credits"
-            c_params = {"api_key": TMDB_API_KEY, "language": "ja"}
-            c_res = requests.get(c_url, params=c_params)
-            director_name = "N/A"
-            if c_res.status_code == 200:
-                credits = c_res.json()
-                crew = credits.get("crew", []) or []
-                directors = [m for m in crew if m.get("job") == "Director"]
-                if directors:
-                    director_name = directors[0].get("name", "N/A")
-
-            try:
-                sheet.append_row([
-                    movie_day.strftime("%Y-%m-%d"),
-                    title,
-                    release_date,
-                    director_name,
-                    user_rating,
-                    user_comment,
-                    str(movie_id),  # ← TMDB_ID を保存
-                ])
-                st.success(f"『{title}』をスプレッドシートに保存しました。")
-            except Exception as e:
-                st.error(f"保存中にエラーが発生しました: {e}")
 
 # =========================
 # 一覧表示（キャッシュ付き）
@@ -272,34 +239,32 @@ try:
         if "TMDB_ID" in df_display.columns:
             df_display = df_display.drop(columns=["TMDB_ID"])
 
-        # 1からの採番表示（画面表示だけ）
+        # 1からの採番表示
         df_display.index = range(1, len(df_display) + 1)
         df_display.index.name = "No."
         st.dataframe(df_display, use_container_width=True)
 
-        # ---- タイトルクリックで詳細表示 ----
+        # ---- クリックで詳細表示するUI ----
         st.write("### 🎯 タイトルをクリックして詳細を表示")
         if "TMDB_ID" in df.columns:
-            # クリック候補を最新順にしたい場合は df = df.iloc[::-1]
+            # 直近追加したものが上に来るように逆順にしたい場合は df[::-1] でもOK
             for i, row in df.iterrows():
                 title_btn = row.get("映画名", "")
                 tmdb_id = row.get("TMDB_ID", "")
                 if not title_btn or not tmdb_id:
                     continue
-                # 同名タイトルでも一意になるようにキーにIDを付与
-                if st.button(title_btn, key=f"open_{tmdb_id}_{i}"):
-                    try:
-                        st.session_state.selected_movie_id = int(tmdb_id)
-                        st.success(f"『{title_btn}』の詳細を表示します。")
-                        st.rerun()
-                    except Exception:
-                        st.error("TMDB_ID が不正です。")
+                # 各タイトルをボタン化（同名でもIDで一意）
+                if st.button(title_btn, key=f"open_{tmdb_id}"):
+                    st.session_state.selected_movie_id = int(tmdb_id)
+                    st.success(f"『{title_btn}』の詳細を表示します。")
+                    st.experimental_rerun()
         else:
-            st.info("クリック表示を有効にするには、保存時に TMDB_ID 列へIDを保存してください。")
+            st.info("クリック表示を有効にするには、保存時に TMDB_ID を持たせてください。")
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
