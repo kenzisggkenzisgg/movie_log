@@ -49,18 +49,10 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
         ws = ss.worksheet(title)
     except WorksheetNotFound:
         ws = ss.add_worksheet(title=title, rows="2000", cols="10")
-        ws.update("A1:G1", [[
-            "映画を見た日", "映画名", "公開日", "監督", "評価", "コメント", "TMDB_ID"
+        ws.update("A1:F1", [[
+            "映画を見た日", "映画名", "公開日", "監督", "評価", "コメント"
         ]])
-        return ws
-
-    # 既存ヘッダーに TMDB_ID がなければ追記
-    header = ws.row_values(1)
-    if "TMDB_ID" not in header:
-        header = (header + ["TMDB_ID"])[:7]  # 7列目にTMDB_ID
-        ws.update("A1:G1", [header])
     return ws
-
 
 sheet = get_or_create_worksheet(SPREADSHEET_ID, SHEET_NAME)
 
@@ -214,12 +206,10 @@ if st.session_state.selected_movie_id:
                 director_name,
                 user_rating,
                 user_comment,
-                str(movie_id),  # ← ここで TMDB_ID を保存
             ])
             st.success(f"『{title}』をスプレッドシートに保存しました。")
         except Exception as e:
             st.error(f"保存中にエラーが発生しました: {e}")
-
 
 # =========================
 # 一覧表示（キャッシュ付き）
@@ -233,33 +223,10 @@ try:
     records = load_records(sheet)
     if records:
         df = pd.DataFrame(records)
-
-        # 表示用は TMDB_ID を隠す
-        df_display = df.copy()
-        if "TMDB_ID" in df_display.columns:
-            df_display = df_display.drop(columns=["TMDB_ID"])
-
-        # 1からの採番表示
-        df_display.index = range(1, len(df_display) + 1)
-        df_display.index.name = "No."
-        st.dataframe(df_display, use_container_width=True)
-
-        # ---- クリックで詳細表示するUI ----
-        st.write("### 🎯 タイトルをクリックして詳細を表示")
-        if "TMDB_ID" in df.columns:
-            # 直近追加したものが上に来るように逆順にしたい場合は df[::-1] でもOK
-            for i, row in df.iterrows():
-                title_btn = row.get("映画名", "")
-                tmdb_id = row.get("TMDB_ID", "")
-                if not title_btn or not tmdb_id:
-                    continue
-                # 各タイトルをボタン化（同名でもIDで一意）
-                if st.button(title_btn, key=f"open_{tmdb_id}"):
-                    st.session_state.selected_movie_id = int(tmdb_id)
-                    st.success(f"『{title_btn}』の詳細を表示します。")
-                    st.experimental_rerun()
-        else:
-            st.info("クリック表示を有効にするには、保存時に TMDB_ID を持たせてください。")
+        # 👇ここでインデックスを1から採番表示
+        df.index = range(1, len(df) + 1)
+        df.index.name = "No."
+        st.dataframe(df, use_container_width=True)
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
