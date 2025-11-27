@@ -58,6 +58,45 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
 sheet = get_or_create_worksheet(SPREADSHEET_ID, SHEET_NAME)
 
 # =========================
+# TMDB ID 解決（タイトルクリック用）
+# =========================
+def resolve_tmdb_id_by_title(title: str, release_date: str | None = None) -> int | None:
+    """
+    鑑賞記録のタイトル（＋公開年があれば年）から TMDB の movie_id を推定して返す。
+    見つからなければ None。
+    """
+    if not title:
+        return None
+
+    search_url = "https://api.themoviedb.org/3/search/movie"
+    params = {
+        "api_key": TMDB_API_KEY,
+        "query": title,
+        "include_adult": "false",
+        "language": "ja",
+    }
+    res = requests.get(search_url, params=params)
+    if res.status_code != 200:
+        return None
+
+    results = res.json().get("results", [])
+    if not results:
+        return None
+
+    # 公開年が分かるなら、年一致を優先
+    year = None
+    if release_date and release_date not in ("N/A", "不明"):
+        year = str(release_date)[:4]
+
+    if year:
+        for m in results:
+            if (m.get("release_date") or "")[:4] == year:
+                return m["id"]
+
+    # 年一致が無ければ先頭候補
+    return results[0]["id"]
+
+# =========================
 # セッション状態
 # =========================
 if "candidates" not in st.session_state:
@@ -76,7 +115,7 @@ with st.container():
     st.subheader("映画タイトル検索")
     movie_title_input = st.text_input("映画のタイトルを入力してください", placeholder="例）トップガン")
 
-    # 🔍 検索ボタンのみ（クリアは削除済み）
+    # 🔍 検索ボタンのみ（クリアは無し）
     if st.button("検索", use_container_width=True):
         if not movie_title_input:
             st.warning("タイトルを入力してください。")
@@ -175,7 +214,7 @@ if st.session_state.selected_movie_id:
         st.markdown(f"**概要**: {overview}")
         st.markdown(f"**公開日**: {release_date}")
         st.markdown(f"**監督**: {director_name}")
-        st.markdown(f"**上映時間**: {runtime} 分")
+        st.markmarkdown(f"**上映時間**: {runtime} 分")
         st.markdown(f"**評価スコア**: {vote_average} /10")
         st.markdown(f"**評価数**: {vote_count} 件")
 
@@ -210,12 +249,12 @@ if st.session_state.selected_movie_id:
                 ])
                 st.success(f"『{title}』をスプレッドシートに保存しました。")
 
-                # ▼ 追加：キャッシュ全体をクリア → 即時再実行で一覧を最新化
+                # キャッシュをクリアして再実行 → 一覧を即時更新
                 st.cache_data.clear()
                 try:
-                    st.rerun()            # 新API
+                    st.rerun()
                 except Exception:
-                    st.experimental_rerun()  # 旧API互換
+                    st.experimental_rerun()
             except Exception as e:
                 st.error(f"保存中にエラーが発生しました: {e}")
 
@@ -232,7 +271,7 @@ try:
     if records:
         df = pd.DataFrame(records)
 
-        # 日付をdatetime化して降順ソート（不正/空は末尾へ）
+        # 日付をdatetime化して降順ソート（新しい順）
         df["_sort_key"] = pd.to_datetime(df["映画を見た日"], errors="coerce")
         df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
 
@@ -240,11 +279,38 @@ try:
         df.index = range(1, len(df) + 1)
         df.index.name = "No."
 
+        # DataFrame のまま一覧表示
         st.dataframe(df, use_container_width=True)
+        st.caption("下のタイトルをクリックすると、その映画の詳細を上部に再表示します。")
+
+        # タイトルクリック用の簡易リスト
+        for i, row in df.reset_index().iterrows():
+            c1, c2, c3 = st.columns([1, 6, 3])
+            with c1:
+                st.write(row["No."])
+            with c2:
+                if st.button(row["映画名"], key=f"title_btn_{i}"):
+                    tmdb_id = resolve_tmdb_id_by_title(
+                        title=row["映画名"],
+                        release_date=row.get("公開日", "")
+                    )
+                    if tmdb_id:
+                        st.session_state.selected_movie_id = tmdb_id
+                        st.success(f"『{row['映画名']}』の詳細を上部に表示します。")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            st.experimental_rerun()
+                    else:
+                        st.warning("TMDBで該当作品を見つけられませんでした。")
+            with c3:
+                st.write(row.get("公開日", ""))
+
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
