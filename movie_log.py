@@ -52,7 +52,7 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
         ws = ss.add_worksheet(title=title, rows="2000", cols="10")
         # カラム名は固定
         ws.update("A1:F1", [[
-            "映画を見た日", "タイトル", "公開日", "監督名", "評価", "感想"
+            "鑑賞日", "タイトル", "公開日", "監督名", "評価", "感想"
         ]])
     return ws
 
@@ -234,7 +234,7 @@ if st.session_state.selected_movie_id:
     # 鑑賞記録フォーム（シートのカラム名と合わせる）
     # =========================
     with st.form("entry_form"):
-        movie_day = st.date_input("映画を見た日", value=date.today())
+        movie_day = st.date_input("鑑賞日", value=date.today())
         user_rating = st.selectbox(
             "評価",
             ["★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★"],
@@ -246,7 +246,7 @@ if st.session_state.selected_movie_id:
         if submitted:
             try:
                 sheet.append_row([
-                    movie_day.strftime("%Y-%m-%d"),  # 映画を見た日
+                    movie_day.strftime("%Y-%m-%d"),  # 鑑賞日
                     title,                           # タイトル
                     release_date,                    # 公開日
                     director_name,                   # 監督名
@@ -272,7 +272,7 @@ def load_records(_sheet):
     return _sheet.get_all_records()
 
 
-st.subheader("📖 鑑賞記録（新しい順）")
+st.subheader("📖 鑑賞記録")
 
 try:
     records = load_records(sheet)
@@ -282,7 +282,7 @@ try:
         df = pd.DataFrame(records)
 
         # ▼ 新しい順に並べ替え
-        df["_sort_key"] = pd.to_datetime(df["映画を見た日"], errors="coerce")
+        df["_sort_key"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
         df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
 
         # ▼ No.（1始まり）
@@ -292,24 +292,23 @@ try:
         st.caption("※ タイトルをクリックすると、上部に映画の詳細が表示されます")
 
         # ▼ 見出し
-        h1, h2, h3, h4, h5, h6, h7 = st.columns([1, 3, 4, 3, 3, 2, 5])
+        h1, h2, h3, h4, h5, h6 = st.columns([1, 3, 4, 3, 3, 2])
         with h1: st.markdown("**No.**")
-        with h2: st.markdown("**映画を見た日**")
-        with h3: st.markdown("**タイトル（クリック可）**")
+        with h2: st.markdown("**鑑賞日**")
+        with h3: st.markdown("**タイトル**")
         with h4: st.markdown("**公開日**")
         with h5: st.markdown("**監督名**")
         with h6: st.markdown("**評価**")
-        with h7: st.markdown("**感想**")
 
         # ▼ 行ループ（タイトルだけボタン）
         for i, row in df.reset_index().iterrows():
-            c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 3, 4, 3, 3, 2, 5])
+            c1, c2, c3, c4, c5, c6 = st.columns([1, 3, 4, 3, 3, 2])
 
             with c1:
                 st.write(row["No."])
 
             with c2:
-                st.write(row["映画を見た日"])
+                st.write(row["鑑賞日"])
 
             with c3:
                 title_val = row["タイトル"]
@@ -337,8 +336,6 @@ try:
             with c6:
                 st.write(row.get("評価", ""))
 
-            with c7:
-                st.write(row.get("感想", ""))
 
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
