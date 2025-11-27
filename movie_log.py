@@ -271,8 +271,7 @@ if st.session_state.selected_movie_id:
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-
-st.subheader("📖 鑑賞記録")
+st.subheader("📖 鑑賞記録（新しい順）")
 
 try:
     records = load_records(sheet)
@@ -285,32 +284,24 @@ try:
         df["_sort_key"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
         df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
 
-        # ▼ No.（1始まり）
-        df.index = range(1, len(df) + 1)
-        df.index.name = "No."
-
         st.caption("※ タイトルをクリックすると、上部に映画の詳細が表示されます")
 
-        # ▼ 見出し
-        h1, h2, h3, h4, h5, h6 = st.columns([1, 3, 4, 3, 3, 2])
-        with h1: st.markdown("**No.**")
-        with h2: st.markdown("**鑑賞日**")
-        with h3: st.markdown("**タイトル**")
-        with h4: st.markdown("**公開日**")
-        with h5: st.markdown("**監督名**")
-        with h6: st.markdown("**評価**")
+        # ▼ 見出し（No.を削除）
+        h1, h2, h3, h4, h5 = st.columns([3, 4, 3, 3, 2])
+        with h1: st.markdown("**鑑賞日**")
+        with h2: st.markdown("**タイトル**")
+        with h3: st.markdown("**公開日**")
+        with h4: st.markdown("**監督名**")
+        with h5: st.markdown("**評価**")
 
-        # ▼ 行ループ（タイトルだけボタン）
-        for i, row in df.reset_index().iterrows():
-            c1, c2, c3, c4, c5, c6 = st.columns([1, 3, 4, 3, 3, 2])
+        # ▼ 行ループ（No.削除）
+        for i, row in df.iterrows():
+            c1, c2, c3, c4, c5 = st.columns([3, 4, 3, 3, 2])
 
             with c1:
-                st.write(row["No."])
-
-            with c2:
                 st.write(row["鑑賞日"])
 
-            with c3:
+            with c2:
                 title_val = row["タイトル"]
                 if st.button(title_val, key=f"title_btn_{i}"):
                     tmdb_id = resolve_tmdb_id_by_title(
@@ -322,23 +313,23 @@ try:
                         st.success(f"『{title_val}』の詳細を上部に表示します。")
                         try:
                             st.rerun()
-                        except Exception:
+                        except:
                             st.experimental_rerun()
                     else:
                         st.warning("TMDBで該当作品を見つけられませんでした。")
 
-            with c4:
+            with c3:
                 st.write(row.get("公開日", ""))
 
-            with c5:
+            with c4:
                 st.write(row.get("監督名", ""))
 
-            with c6:
+            with c5:
                 st.write(row.get("評価", ""))
-
 
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
