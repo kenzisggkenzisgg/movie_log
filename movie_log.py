@@ -50,8 +50,9 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
         ws = ss.worksheet(title)
     except WorksheetNotFound:
         ws = ss.add_worksheet(title=title, rows="2000", cols="10")
+        # カラム名は固定
         ws.update("A1:F1", [[
-            "映画を見た日", "映画名", "公開日", "監督", "評価", "コメント"
+            "映画を見た日", "タイトル", "公開日", "監督名", "評価", "感想"
         ]])
     return ws
 
@@ -62,20 +63,21 @@ sheet = get_or_create_worksheet(SPREADSHEET_ID, SHEET_NAME)
 # =========================
 def resolve_tmdb_id_by_title(title: str, release_date: str | None = None) -> int | None:
     """
-    鑑賞記録のタイトル（＋公開年があれば年）から TMDB の movie_id を推定して返す。
+    タイトル（＋公開年があれば年）から TMDB の movie_id を推定。
     見つからなければ None。
     """
     if not title:
         return None
 
-    search_url = "https://api.themoviedb.org/3/search/movie"
-    params = {
-        "api_key": TMDB_API_KEY,
-        "query": title,
-        "include_adult": "false",
-        "language": "ja",
-    }
-    res = requests.get(search_url, params=params)
+    res = requests.get(
+        "https://api.themoviedb.org/3/search/movie",
+        params={
+            "api_key": TMDB_API_KEY,
+            "query": title,
+            "include_adult": "false",
+            "language": "ja",
+        },
+    )
     if res.status_code != 200:
         return None
 
@@ -83,7 +85,6 @@ def resolve_tmdb_id_by_title(title: str, release_date: str | None = None) -> int
     if not results:
         return None
 
-    # 公開年が分かるなら、年一致を優先
     year = None
     if release_date and release_date not in ("N/A", "不明"):
         year = str(release_date)[:4]
@@ -93,7 +94,6 @@ def resolve_tmdb_id_by_title(title: str, release_date: str | None = None) -> int
             if (m.get("release_date") or "")[:4] == year:
                 return m["id"]
 
-    # 年一致が無ければ先頭候補
     return results[0]["id"]
 
 # =========================
@@ -113,21 +113,23 @@ st.title("🎬 映画鑑賞記録")
 
 with st.container():
     st.subheader("映画タイトル検索")
-    movie_title_input = st.text_input("映画のタイトルを入力してください", placeholder="例）トップガン")
+    movie_title_input = st.text_input(
+        "映画のタイトルを入力してください", placeholder="例）トップガン"
+    )
 
-    # 🔍 検索ボタンのみ（クリアは無し）
     if st.button("検索", use_container_width=True):
         if not movie_title_input:
             st.warning("タイトルを入力してください。")
         else:
-            search_url = "https://api.themoviedb.org/3/search/movie"
-            params = {
-                "api_key": TMDB_API_KEY,
-                "query": movie_title_input,
-                "include_adult": "false",
-                "language": "ja",
-            }
-            res = requests.get(search_url, params=params)
+            res = requests.get(
+                "https://api.themoviedb.org/3/search/movie",
+                params={
+                    "api_key": TMDB_API_KEY,
+                    "query": movie_title_input,
+                    "include_adult": "false",
+                    "language": "ja",
+                },
+            )
             if res.status_code != 200:
                 st.error("TMDB検索でエラーが発生しました。")
             else:
@@ -145,10 +147,10 @@ if st.session_state.candidates:
     labels = {}
     for r in st.session_state.candidates:
         rid = r["id"]
-        title = r.get("title") or r.get("original_title", "N/A")
+        t = r.get("title") or r.get("original_title", "N/A")
         orig = r.get("original_title", "")
         year = (r.get("release_date") or "????")[:4]
-        label = f"{title} ({orig}) - {year}"
+        label = f"{t} ({orig}) - {year}"
         options.append(rid)
         labels[rid] = label
 
@@ -173,9 +175,10 @@ if st.session_state.candidates:
 # =========================
 if st.session_state.selected_movie_id:
     movie_id = st.session_state.selected_movie_id
-    d_url = f"https://api.themoviedb.org/3/movie/{movie_id}"
-    d_params = {"api_key": TMDB_API_KEY, "language": "ja"}
-    d_res = requests.get(d_url, params=d_params)
+    d_res = requests.get(
+        f"https://api.themoviedb.org/3/movie/{movie_id}",
+        params={"api_key": TMDB_API_KEY, "language": "ja"},
+    )
     if d_res.status_code != 200:
         st.error("TMDB詳細でエラーが発生しました。")
         st.stop()
@@ -191,9 +194,10 @@ if st.session_state.selected_movie_id:
     poster_path = detail.get("poster_path")
 
     # クレジット
-    c_url = f"https://api.themoviedb.org/3/movie/{movie_id}/credits"
-    c_params = {"api_key": TMDB_API_KEY, "language": "ja"}
-    c_res = requests.get(c_url, params=c_params)
+    c_res = requests.get(
+        f"https://api.themoviedb.org/3/movie/{movie_id}/credits",
+        params={"api_key": TMDB_API_KEY, "language": "ja"},
+    )
     director_name = "N/A"
     cast = []
     if c_res.status_code == 200:
@@ -204,17 +208,19 @@ if st.session_state.selected_movie_id:
         if directors:
             director_name = directors[0].get("name", "N/A")
 
-    # 詳細表示
     st.subheader(f"{title} ({original_title})")
     cols = st.columns([1, 2])
     with cols[0]:
         if poster_path:
-            st.image(f"https://image.tmdb.org/t/p/w300{poster_path}", caption="Movie Poster")
+            st.image(
+                f"https://image.tmdb.org/t/p/w300{poster_path}",
+                caption="Movie Poster"
+            )
     with cols[1]:
         st.markdown(f"**概要**: {overview}")
         st.markdown(f"**公開日**: {release_date}")
-        st.markdown(f"**監督**: {director_name}")
-        st.markmarkdown(f"**上映時間**: {runtime} 分")
+        st.markdown(f"**監督名**: {director_name}")
+        st.markdown(f"**上映時間**: {runtime} 分")
         st.markdown(f"**評価スコア**: {vote_average} /10")
         st.markdown(f"**評価数**: {vote_count} 件")
 
@@ -225,7 +231,7 @@ if st.session_state.selected_movie_id:
         st.write(f"- {name} ({character})")
 
     # =========================
-    # 鑑賞記録フォーム
+    # 鑑賞記録フォーム（シートのカラム名と合わせる）
     # =========================
     with st.form("entry_form"):
         movie_day = st.date_input("映画を見た日", value=date.today())
@@ -240,12 +246,12 @@ if st.session_state.selected_movie_id:
         if submitted:
             try:
                 sheet.append_row([
-                    movie_day.strftime("%Y-%m-%d"),
-                    title,
-                    release_date,
-                    director_name,
-                    user_rating,
-                    user_comment,
+                    movie_day.strftime("%Y-%m-%d"),  # 映画を見た日
+                    title,                           # タイトル
+                    release_date,                    # 公開日
+                    director_name,                   # 監督名
+                    user_rating,                     # 評価
+                    user_comment,                    # 感想
                 ])
                 st.success(f"『{title}』をスプレッドシートに保存しました。")
 
@@ -271,32 +277,35 @@ try:
     if records:
         df = pd.DataFrame(records)
 
-        # 日付をdatetime化して降順ソート（新しい順）
+        # カラム名は固定前提
+        # 「映画を見た日」で新しい順に並べ替え
         df["_sort_key"] = pd.to_datetime(df["映画を見た日"], errors="coerce")
-        df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
+        df = df.sort_values("_sort_key", ascending=False, na_position="last")
+        df = df.drop(columns="_sort_key")
 
-        # 1 始まりの採番を左端に表示
+        # 採番（1,2,3,...）
         df.index = range(1, len(df) + 1)
         df.index.name = "No."
 
-        # DataFrame のまま一覧表示
+        # 一覧表示
         st.dataframe(df, use_container_width=True)
         st.caption("下のタイトルをクリックすると、その映画の詳細を上部に再表示します。")
 
-        # タイトルクリック用の簡易リスト
+        # タイトルクリック用のボタンリスト
         for i, row in df.reset_index().iterrows():
             c1, c2, c3 = st.columns([1, 6, 3])
             with c1:
                 st.write(row["No."])
             with c2:
-                if st.button(row["映画名"], key=f"title_btn_{i}"):
+                title_val = row["タイトル"]
+                if st.button(str(title_val), key=f"title_btn_{i}"):
                     tmdb_id = resolve_tmdb_id_by_title(
-                        title=row["映画名"],
+                        title=title_val,
                         release_date=row.get("公開日", "")
                     )
                     if tmdb_id:
                         st.session_state.selected_movie_id = tmdb_id
-                        st.success(f"『{row['映画名']}』の詳細を上部に表示します。")
+                        st.success(f"『{title_val}』の詳細を上部に表示します。")
                         try:
                             st.rerun()
                         except Exception:
