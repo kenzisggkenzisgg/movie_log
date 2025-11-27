@@ -284,26 +284,19 @@ try:
         df["_sort_key"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
         df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
 
-        st.caption("※ タイトルをクリックすると、上部に映画の詳細が表示されます")
+        st.caption("※ タイトルをタップすると、上部に映画の詳細が表示されます（スマホ向けカード表示）")
 
-        # ▼ 見出し（No.を削除）
-        h1, h2, h3, h4, h5 = st.columns([3, 4, 3, 3, 2])
-        with h1: st.markdown("**鑑賞日**")
-        with h2: st.markdown("**タイトル**")
-        with h3: st.markdown("**公開日**")
-        with h4: st.markdown("**監督名**")
-        with h5: st.markdown("**評価**")
-
-        # ▼ 行ループ（No.削除）
+        # ▼ 1レコード＝1カードで縦に並べる
         for i, row in df.iterrows():
-            c1, c2, c3, c4, c5 = st.columns([3, 4, 3, 3, 2])
+            with st.container():
+                st.markdown("---")  # カードの区切り線（不要なら消してOK）
 
-            with c1:
-                st.write(row["鑑賞日"])
-
-            with c2:
+                # タイトル＋評価を一番上に大きめに
                 title_val = row["タイトル"]
-                if st.button(title_val, key=f"title_btn_{i}"):
+                rating_val = row.get("評価", "")
+
+                # タイトルをボタンに（スマホだとタップしやすい）
+                if st.button(f"🎬 {title_val}（{rating_val}）", key=f"title_btn_{i}"):
                     tmdb_id = resolve_tmdb_id_by_title(
                         title=title_val,
                         release_date=row.get("公開日", "")
@@ -313,22 +306,25 @@ try:
                         st.success(f"『{title_val}』の詳細を上部に表示します。")
                         try:
                             st.rerun()
-                        except:
+                        except Exception:
                             st.experimental_rerun()
                     else:
                         st.warning("TMDBで該当作品を見つけられませんでした。")
 
-            with c3:
-                st.write(row.get("公開日", ""))
+                # それ以外の情報は縦に並べる
+                st.markdown(f"**鑑賞日**：{row.get('鑑賞日', '')}")
+                st.markdown(f"**公開日**：{row.get('公開日', '')}")
+                st.markdown(f"**監督名**：{row.get('監督名', '')}")
 
-            with c4:
-                st.write(row.get("監督名", ""))
-
-            with c5:
-                st.write(row.get("評価", ""))
+                # 感想は長くなりがちなので折りたたみもアリ
+                comment = row.get("感想", "")
+                if comment:
+                    with st.expander("感想を見る"):
+                        st.write(comment)
 
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
