@@ -265,38 +265,84 @@ if st.session_state.selected_movie_id:
                 st.error(f"保存中にエラーが発生しました: {e}")
 
 # =========================
-# 一覧表示（キャッシュ付き）
+# 一覧表示（新しい順・タイトルクリック）
 # =========================
 @st.cache_data(ttl=60)
 def load_records(_sheet):
     return _sheet.get_all_records()
 
+
 st.subheader("📖 鑑賞記録（新しい順）")
+
 try:
     records = load_records(sheet)
-    if records:
+    if not records:
+        st.write("まだ鑑賞記録はありません。")
+    else:
         df = pd.DataFrame(records)
 
-        # スプレッドシートの6カラムだけを、この順番で使う
-        cols = ["映画を見た日", "タイトル", "公開日", "監督名", "評価", "感想"]
-        df = df[cols]
-
-        # 「映画を見た日」で新しい順に並べ替え
+        # ▼ 新しい順に並べ替え
         df["_sort_key"] = pd.to_datetime(df["映画を見た日"], errors="coerce")
-        df = df.sort_values("_sort_key", ascending=False, na_position="last")
-        df = df.drop(columns="_sort_key")
+        df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
 
-        # 左端に 1,2,3,... の No. を付ける
+        # ▼ No.（1始まり）
         df.index = range(1, len(df) + 1)
         df.index.name = "No."
 
-        # 👉 一覧に「映画を見た日」「タイトル」「公開日」「監督名」「評価」「感想」を表示
-        st.dataframe(df, use_container_width=True)
+        st.caption("※ タイトルをクリックすると、上部に映画の詳細が表示されます")
 
-    else:
-        st.write("まだ鑑賞記録はありません。")
+        # ▼ 見出し
+        h1, h2, h3, h4, h5, h6, h7 = st.columns([1, 3, 4, 3, 3, 2, 5])
+        with h1: st.markdown("**No.**")
+        with h2: st.markdown("**映画を見た日**")
+        with h3: st.markdown("**タイトル（クリック可）**")
+        with h4: st.markdown("**公開日**")
+        with h5: st.markdown("**監督名**")
+        with h6: st.markdown("**評価**")
+        with h7: st.markdown("**感想**")
+
+        # ▼ 行ループ（タイトルだけボタン）
+        for i, row in df.reset_index().iterrows():
+            c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 3, 4, 3, 3, 2, 5])
+
+            with c1:
+                st.write(row["No."])
+
+            with c2:
+                st.write(row["映画を見た日"])
+
+            with c3:
+                title_val = row["タイトル"]
+                if st.button(title_val, key=f"title_btn_{i}"):
+                    tmdb_id = resolve_tmdb_id_by_title(
+                        title=title_val,
+                        release_date=row.get("公開日", "")
+                    )
+                    if tmdb_id:
+                        st.session_state.selected_movie_id = tmdb_id
+                        st.success(f"『{title_val}』の詳細を上部に表示します。")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            st.experimental_rerun()
+                    else:
+                        st.warning("TMDBで該当作品を見つけられませんでした。")
+
+            with c4:
+                st.write(row.get("公開日", ""))
+
+            with c5:
+                st.write(row.get("監督名", ""))
+
+            with c6:
+                st.write(row.get("評価", ""))
+
+            with c7:
+                st.write(row.get("感想", ""))
+
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
