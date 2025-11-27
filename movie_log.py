@@ -226,19 +226,26 @@ if st.session_state.selected_movie_id:
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-st.subheader("📖 鑑賞記録")
+st.subheader("📖 鑑賞記録（新しい順）")
 try:
     records = load_records(sheet)
     if records:
         df = pd.DataFrame(records)
-        # 👇ここでインデックスを1から採番表示
+
+        # 日付をdatetime化して降順ソート（不正/空は末尾へ）
+        df["_sort_key"] = pd.to_datetime(df["映画を見た日"], errors="coerce")
+        df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
+
+        # 1 始まりの採番を左端に表示
         df.index = range(1, len(df) + 1)
         df.index.name = "No."
+
         st.dataframe(df, use_container_width=True)
     else:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
