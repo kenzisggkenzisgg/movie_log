@@ -269,11 +269,15 @@ if st.session_state.selected_movie_id:
                 st.error(f"保存中にエラーが発生しました: {e}")
 
 # =========================
-# 一覧表示（年別バナー＋カード表示・トグル）
+# 一覧表示（年別バナー＋カード表示・シンプル版）
 # =========================
 @st.cache_data(ttl=60)
 def load_records(_sheet):
     return _sheet.get_all_records()
+
+# 年フィルタ（どの年を表示するか）だけをセッションに持つ
+if "year_filter" not in st.session_state:
+    st.session_state.year_filter = None  # 最初は未選択
 
 st.subheader("📖 鑑賞記録（年別）")
 
@@ -294,34 +298,25 @@ try:
         # ▼ 年バナー
         if years:
             st.markdown("### 📅 年を選択")
-            banner_cols = st.columns(len(years))  # 「すべて」は今回は無しでシンプルに
+            banner_cols = st.columns(len(years))
 
             for idx, y in enumerate(years):
                 with banner_cols[idx]:
-                    # 「その年が選択されていて、かつ表示中」のときだけ ✅ を付ける
-                    selected_and_visible = (
-                        st.session_state.year_filter == y
-                        and st.session_state.year_visible
-                    )
                     label = f"{y}年"
-                    if selected_and_visible:
-                        label = "✅ " + label
-
-                    # ボタン押下でトグル処理
+                    # ボタン押下で「同じ年なら解除／別の年なら切り替え」
                     if st.button(label, use_container_width=True, key=f"year_btn_{y}"):
-                        if st.session_state.year_filter == y and st.session_state.year_visible:
-                            # 同じ年が押された → 表示中なら「非表示」にする
-                            st.session_state.year_visible = False
+                        if st.session_state.year_filter == y:
+                            # 同じ年をもう一度 → 非表示に戻す
+                            st.session_state.year_filter = None
                         else:
-                            # 別の年、または非表示状態 → この年を表示対象にする
+                            # 別の年 → その年を表示対象にする
                             st.session_state.year_filter = y
-                            st.session_state.year_visible = True
 
         # ▼ 一覧の表示／非表示
-        if st.session_state.year_filter is None or not st.session_state.year_visible:
+        current_year = st.session_state.year_filter
+        if current_year is None:
             st.info("年のバナーをクリックすると、その年の鑑賞記録が表示されます。")
         else:
-            current_year = st.session_state.year_filter
             df_filtered = df[df["year"] == current_year].copy()
 
             # 新しい順に並べ替え
@@ -372,6 +367,7 @@ try:
 
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 
