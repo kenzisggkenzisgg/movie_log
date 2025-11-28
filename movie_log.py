@@ -50,7 +50,6 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
         ws = ss.worksheet(title)
     except WorksheetNotFound:
         ws = ss.add_worksheet(title=title, rows="2000", cols="10")
-        # カラム名は固定
         ws.update("A1:F1", [[
             "鑑賞日", "タイトル", "公開日", "監督名", "評価", "感想"
         ]])
@@ -105,6 +104,11 @@ if "selected_movie_id" not in st.session_state:
     st.session_state.selected_movie_id = None
 if "last_query" not in st.session_state:
     st.session_state.last_query = ""
+# 年フィルタ用
+if "year_filter" not in st.session_state:
+    st.session_state.year_filter = None   # 選択中の年（例: 2025）/ None
+if "year_visible" not in st.session_state:
+    st.session_state.year_visible = False # 一覧表示フラグ
 
 # =========================
 # UI
@@ -263,21 +267,15 @@ if st.session_state.selected_movie_id:
                     st.experimental_rerun()
             except Exception as e:
                 st.error(f"保存中にエラーが発生しました: {e}")
-                    
+
 # =========================
-# 一覧表示（年別バナー＋カード表示・トグル対応）
+# 一覧表示（年別バナー＋カード表示・トグル）
 # =========================
 @st.cache_data(ttl=60)
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-# 年選択と表示状態をセッションで保持
-if "selected_year" not in st.session_state:
-    st.session_state.selected_year = None   # 最初は未選択
-if "show_list" not in st.session_state:
-    st.session_state.show_list = False      # 最初は非表示
-
-st.subheader("📖 鑑賞記録")
+st.subheader("📖 鑑賞記録（年別）")
 
 try:
     records = load_records(sheet)
@@ -296,64 +294,43 @@ try:
         # ▼ 年バナー
         if years:
             st.markdown("### 📅 年を選択")
-            banner_cols = st.columns(len(years) + 1)  # 先頭に「すべて」
+            banner_cols = st.columns(len(years))  # 「すべて」は今回は無しでシンプルに
 
-            # ---- 「すべて」ボタン ----
-            with banner_cols[0]:
-                is_selected = (
-                    st.session_state.selected_year == "ALL"
-                    and st.session_state.show_list
-                )
-                label = "すべて"
-                if is_selected:
-                    label = "✅ " + label
-
-                if st.button(label, use_container_width=True, key="year_all"):
-                    # 同じ状態ならトグル（表示⇔非表示）
-                    if st.session_state.selected_year == "ALL" and st.session_state.show_list:
-                        st.session_state.show_list = False
-                    else:
-                        st.session_state.selected_year = "ALL"
-                        st.session_state.show_list = True
-
-            # ---- 各年ボタン ----
-            for idx, y in enumerate(years, start=1):
+            for idx, y in enumerate(years):
                 with banner_cols[idx]:
-                    is_selected = (
-                        st.session_state.selected_year == y
-                        and st.session_state.show_list
+                    # 「その年が選択されていて、かつ表示中」のときだけ ✅ を付ける
+                    selected_and_visible = (
+                        st.session_state.year_filter == y
+                        and st.session_state.year_visible
                     )
                     label = f"{y}年"
-                    if is_selected:
+                    if selected_and_visible:
                         label = "✅ " + label
 
+                    # ボタン押下でトグル処理
                     if st.button(label, use_container_width=True, key=f"year_btn_{y}"):
-                        # 同じ年が押されたらトグル（表示⇔非表示）
-                        if st.session_state.selected_year == y and st.session_state.show_list:
-                            st.session_state.show_list = False
+                        if st.session_state.year_filter == y and st.session_state.year_visible:
+                            # 同じ年が押された → 表示中なら「非表示」にする
+                            st.session_state.year_visible = False
                         else:
-                            st.session_state.selected_year = y
-                            st.session_state.show_list = True
+                            # 別の年、または非表示状態 → この年を表示対象にする
+                            st.session_state.year_filter = y
+                            st.session_state.year_visible = True
 
-        # ▼ 年が未選択 or 非表示モードなら一覧は出さない
-        if st.session_state.selected_year is None or not st.session_state.show_list:
+        # ▼ 一覧の表示／非表示
+        if st.session_state.year_filter is None or not st.session_state.year_visible:
             st.info("年のバナーをクリックすると、その年の鑑賞記録が表示されます。")
         else:
-            # ▼ 一覧表示する年を決定
-            current_year = st.session_state.selected_year
-            if current_year == "ALL":
-                df_filtered = df.copy()
-                st.markdown("#### 📂 表示対象：**すべての年**")
-            else:
-                df_filtered = df[df["year"] == current_year].copy()
-                st.markdown(f"#### 📂 表示対象：**{current_year}年**")
+            current_year = st.session_state.year_filter
+            df_filtered = df[df["year"] == current_year].copy()
 
             # 新しい順に並べ替え
             df_filtered = df_filtered.sort_values("鑑賞日_dt", ascending=False)
 
             if df_filtered.empty:
-                st.info("この年の鑑賞記録はありません。")
+                st.info(f"{current_year}年の鑑賞記録はありません。")
             else:
+                st.markdown(f"#### 📂 表示対象：**{current_year}年**")
                 st.caption("※ タイトルをタップすると、上部に映画の詳細が表示されます（スマホ向けカード表示）")
 
                 # ▼ 1レコード＝1カードで縦に並べる
@@ -396,35 +373,6 @@ try:
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
 
-
-
-
-# =========================
-# 一覧表示（キャッシュ付き）
-# =========================
-@st.cache_data(ttl=60)
-def load_records(_sheet):
-    return _sheet.get_all_records()
-
-st.subheader("📖 鑑賞記録（全記録）")
-try:
-    records = load_records(sheet)
-    if records:
-        df = pd.DataFrame(records)
-
-        # 日付をdatetime化して降順ソート（不正/空は末尾へ）
-        df["_sort_key"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
-        df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
-
-        # 1 始まりの採番を左端に表示
-        df.index = range(1, len(df) + 1)
-        df.index.name = "No."
-
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.write("まだ鑑賞記録はありません。")
-except Exception as e:
-    st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
 
 
 
