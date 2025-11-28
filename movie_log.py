@@ -368,6 +368,61 @@ try:
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
 
+# =========================
+# 一覧表示（キャッシュ付き）
+# =========================
+@st.cache_data(ttl=60)
+def load_records(_sheet):
+    return _sheet.get_all_records()
+
+st.subheader("📖 鑑賞記録（全記録）")
+try:
+    records = load_records(sheet)
+    if records:
+        df = pd.DataFrame(records)
+
+        # カラム名は固定前提
+        # 「鑑賞日」で新しい順に並べ替え
+        df["_sort_key"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
+        df = df.sort_values("_sort_key", ascending=False, na_position="last")
+        df = df.drop(columns="_sort_key")
+
+        # 採番（1,2,3,...）
+        df.index = range(1, len(df) + 1)
+        df.index.name = "No."
+
+        # 一覧表示
+        st.dataframe(df, use_container_width=True)
+        st.caption("下のタイトルをクリックすると、その映画の詳細を上部に再表示します。")
+
+        # タイトルクリック用のボタンリスト
+        for i, row in df.reset_index().iterrows():
+            c1, c2, c3 = st.columns([1, 6, 3])
+            with c1:
+                st.write(row["No."])
+            with c2:
+                title_val = row["タイトル"]
+                if st.button(str(title_val), key=f"title_btn_{i}"):
+                    tmdb_id = resolve_tmdb_id_by_title(
+                        title=title_val,
+                        release_date=row.get("公開日", "")
+                    )
+                    if tmdb_id:
+                        st.session_state.selected_movie_id = tmdb_id
+                        st.success(f"『{title_val}』の詳細を上部に表示します。")
+                        try:
+                            st.rerun()
+                        except Exception:
+                            st.experimental_rerun()
+                    else:
+                        st.warning("TMDBで該当作品を見つけられませんでした。")
+            with c3:
+                st.write(row.get("公開日", ""))
+
+    else:
+        st.write("まだ鑑賞記録はありません。")
+except Exception as e:
+    st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
 
 
 
