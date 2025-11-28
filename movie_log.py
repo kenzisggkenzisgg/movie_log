@@ -265,15 +265,17 @@ if st.session_state.selected_movie_id:
                 st.error(f"保存中にエラーが発生しました: {e}")
                     
 # =========================
-# 一覧表示（年別バナー＋カード表示）
+# 一覧表示（年別バナー＋カード表示・トグル対応）
 # =========================
 @st.cache_data(ttl=60)
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-# 年選択をセッションで保持（最初は未選択）
+# 年選択と表示状態をセッションで保持
 if "selected_year" not in st.session_state:
-    st.session_state.selected_year = None   # ← ここがポイント
+    st.session_state.selected_year = None   # 最初は未選択
+if "show_list" not in st.session_state:
+    st.session_state.show_list = False      # 最初は非表示
 
 st.subheader("📖 鑑賞記録")
 
@@ -291,37 +293,55 @@ try:
         years = sorted(df["year"].dropna().unique(), reverse=True)
         years = [int(y) for y in years]
 
-        # ▼ 年バナー（横に並べる）
+        # ▼ 年バナー
         if years:
             st.markdown("### 📅 年を選択")
             banner_cols = st.columns(len(years) + 1)  # 先頭に「すべて」
 
-            # 「すべて」ボタン
+            # ---- 「すべて」ボタン ----
             with banner_cols[0]:
-                label_all = "すべて"
-                if st.session_state.selected_year == "すべて":
-                    label_all = "✅ すべて"
-                if st.button(label_all, use_container_width=True, key="year_all"):
-                    st.session_state.selected_year = "すべて"
+                is_selected = (
+                    st.session_state.selected_year == "ALL"
+                    and st.session_state.show_list
+                )
+                label = "すべて"
+                if is_selected:
+                    label = "✅ " + label
 
-            # 各年ボタン
+                if st.button(label, use_container_width=True, key="year_all"):
+                    # 同じ状態ならトグル（表示⇔非表示）
+                    if st.session_state.selected_year == "ALL" and st.session_state.show_list:
+                        st.session_state.show_list = False
+                    else:
+                        st.session_state.selected_year = "ALL"
+                        st.session_state.show_list = True
+
+            # ---- 各年ボタン ----
             for idx, y in enumerate(years, start=1):
-                label = f"{y}年"
-                current = st.session_state.selected_year
-                if current == y:
-                    label = f"✅ {y}年"
                 with banner_cols[idx]:
-                    if st.button(label, use_container_width=True, key=f"year_btn_{y}"):
-                        st.session_state.selected_year = y
+                    is_selected = (
+                        st.session_state.selected_year == y
+                        and st.session_state.show_list
+                    )
+                    label = f"{y}年"
+                    if is_selected:
+                        label = "✅ " + label
 
-        # ▼ まだ年が選ばれていないときは、一覧を出さない
-        current_year = st.session_state.selected_year
-        if current_year is None:
+                    if st.button(label, use_container_width=True, key=f"year_btn_{y}"):
+                        # 同じ年が押されたらトグル（表示⇔非表示）
+                        if st.session_state.selected_year == y and st.session_state.show_list:
+                            st.session_state.show_list = False
+                        else:
+                            st.session_state.selected_year = y
+                            st.session_state.show_list = True
+
+        # ▼ 年が未選択 or 非表示モードなら一覧は出さない
+        if st.session_state.selected_year is None or not st.session_state.show_list:
             st.info("年のバナーをクリックすると、その年の鑑賞記録が表示されます。")
-            # ここで return して一覧部分は描画しない
         else:
-            # ▼ 選択された年でフィルタ
-            if current_year == "すべて":
+            # ▼ 一覧表示する年を決定
+            current_year = st.session_state.selected_year
+            if current_year == "ALL":
                 df_filtered = df.copy()
                 st.markdown("#### 📂 表示対象：**すべての年**")
             else:
@@ -345,8 +365,10 @@ try:
                         rating_val = row.get("評価", "")
 
                         # タイトル＋評価 → タップ用ボタン
-                        if st.button(f"🎬 {title_val}（{rating_val}）",
-                                     key=f"title_btn_{current_year}_{i}"):
+                        if st.button(
+                            f"🎬 {title_val}（{rating_val}）",
+                            key=f"title_btn_{current_year}_{i}",
+                        ):
                             tmdb_id = resolve_tmdb_id_by_title(
                                 title=title_val,
                                 release_date=row.get("公開日", "")
@@ -373,6 +395,7 @@ try:
 
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
 
 
 # =========================
