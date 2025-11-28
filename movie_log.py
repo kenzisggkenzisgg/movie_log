@@ -263,7 +263,118 @@ if st.session_state.selected_movie_id:
                     st.experimental_rerun()
             except Exception as e:
                 st.error(f"保存中にエラーが発生しました: {e}")
-                
+                    
+# =========================
+# 一覧表示（年別バナー＋カード表示）
+# =========================
+@st.cache_data(ttl=60)
+def load_records(_sheet):
+    return _sheet.get_all_records()
+
+# 年選択をセッションで保持（最初は未選択）
+if "selected_year" not in st.session_state:
+    st.session_state.selected_year = None   # ← ここがポイント
+
+st.subheader("📖 鑑賞記録")
+
+try:
+    records = load_records(sheet)
+    if not records:
+        st.write("まだ鑑賞記録はありません。")
+    else:
+        df = pd.DataFrame(records)
+
+        # 鑑賞日を日付型に変換 & 年を抽出
+        df["鑑賞日_dt"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
+        df["year"] = df["鑑賞日_dt"].dt.year
+
+        years = sorted(df["year"].dropna().unique(), reverse=True)
+        years = [int(y) for y in years]
+
+        # ▼ 年バナー（横に並べる）
+        if years:
+            st.markdown("### 📅 年を選択")
+            banner_cols = st.columns(len(years) + 1)  # 先頭に「すべて」
+
+            # 「すべて」ボタン
+            with banner_cols[0]:
+                label_all = "すべて"
+                if st.session_state.selected_year == "すべて":
+                    label_all = "✅ すべて"
+                if st.button(label_all, use_container_width=True, key="year_all"):
+                    st.session_state.selected_year = "すべて"
+
+            # 各年ボタン
+            for idx, y in enumerate(years, start=1):
+                label = f"{y}年"
+                current = st.session_state.selected_year
+                if current == y:
+                    label = f"✅ {y}年"
+                with banner_cols[idx]:
+                    if st.button(label, use_container_width=True, key=f"year_btn_{y}"):
+                        st.session_state.selected_year = y
+
+        # ▼ まだ年が選ばれていないときは、一覧を出さない
+        current_year = st.session_state.selected_year
+        if current_year is None:
+            st.info("年のバナーをクリックすると、その年の鑑賞記録が表示されます。")
+            # ここで return して一覧部分は描画しない
+        else:
+            # ▼ 選択された年でフィルタ
+            if current_year == "すべて":
+                df_filtered = df.copy()
+                st.markdown("#### 📂 表示対象：**すべての年**")
+            else:
+                df_filtered = df[df["year"] == current_year].copy()
+                st.markdown(f"#### 📂 表示対象：**{current_year}年**")
+
+            # 新しい順に並べ替え
+            df_filtered = df_filtered.sort_values("鑑賞日_dt", ascending=False)
+
+            if df_filtered.empty:
+                st.info("この年の鑑賞記録はありません。")
+            else:
+                st.caption("※ タイトルをタップすると、上部に映画の詳細が表示されます（スマホ向けカード表示）")
+
+                # ▼ 1レコード＝1カードで縦に並べる
+                for i, row in df_filtered.iterrows():
+                    with st.container():
+                        st.markdown("---")  # 区切り線
+
+                        title_val = row["タイトル"]
+                        rating_val = row.get("評価", "")
+
+                        # タイトル＋評価 → タップ用ボタン
+                        if st.button(f"🎬 {title_val}（{rating_val}）",
+                                     key=f"title_btn_{current_year}_{i}"):
+                            tmdb_id = resolve_tmdb_id_by_title(
+                                title=title_val,
+                                release_date=row.get("公開日", "")
+                            )
+                            if tmdb_id:
+                                st.session_state.selected_movie_id = tmdb_id
+                                st.success(f"『{title_val}』の詳細を上部に表示します。")
+                                try:
+                                    st.rerun()
+                                except Exception:
+                                    st.experimental_rerun()
+                            else:
+                                st.warning("TMDBで該当作品を見つけられませんでした。")
+
+                        # その他の情報を縦に表示
+                        st.markdown(f"**鑑賞日**：{row.get('鑑賞日', '')}")
+                        st.markdown(f"**公開日**：{row.get('公開日', '')}")
+                        st.markdown(f"**監督名**：{row.get('監督名', '')}")
+
+                        comment = row.get("感想", "")
+                        if comment:
+                            with st.expander("✏ 感想を見る"):
+                                st.write(comment)
+
+except Exception as e:
+    st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
+
+
 # =========================
 # 一覧表示（キャッシュ付き）
 # =========================
@@ -271,7 +382,7 @@ if st.session_state.selected_movie_id:
 def load_records(_sheet):
     return _sheet.get_all_records()
 
-st.subheader("📖 鑑賞記録（新しい順）")
+st.subheader("📖 鑑賞記録（全記録）")
 try:
     records = load_records(sheet)
     if records:
@@ -290,114 +401,6 @@ try:
         st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
-
-    
-# =========================
-# 一覧表示（年別バナー＋カード表示）
-# =========================
-@st.cache_data(ttl=60)
-def load_records(_sheet):
-    return _sheet.get_all_records()
-
-# 年選択をセッションで保持
-if "selected_year" not in st.session_state:
-    st.session_state.selected_year = "最新"
-
-st.subheader("📖 鑑賞記録")
-
-try:
-    records = load_records(sheet)
-    if not records:
-        st.write("まだ鑑賞記録はありません。")
-    else:
-        df = pd.DataFrame(records)
-
-        # 鑑賞日を日付型に変換 & 年を抽出
-        df["鑑賞日_dt"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
-        df["year"] = df["鑑賞日_dt"].dt.year
-
-        # 有効な年だけ
-        years = sorted(df["year"].dropna().unique(), reverse=True)
-        years = [int(y) for y in years]
-
-        # デフォルト（「最新」）の場合は一番新しい年
-        if st.session_state.selected_year == "最新" and years:
-            st.session_state.selected_year = years[0]
-
-        # ▼ 年バナー（横に並べる）
-        st.markdown("### 📅 年を選択")
-        banner_cols = st.columns(len(years) + 1)  # 先頭に「すべて」を追加
-
-        # 「すべて」ボタン
-        with banner_cols[0]:
-            if st.button("すべて", use_container_width=True):
-                st.session_state.selected_year = "すべて"
-
-        # 各年ボタン
-        for idx, y in enumerate(years, start=1):
-            label = f"{y}年"
-            with banner_cols[idx]:
-                # 選択中の年だけ少し強調（マークを付ける）
-                current = st.session_state.selected_year
-                disp_label = f"✅ {label}" if current == y else label
-                if st.button(disp_label, use_container_width=True, key=f"year_btn_{y}"):
-                    st.session_state.selected_year = y
-
-        # ▼ 選択された年でフィルタ
-        current_year = st.session_state.selected_year
-        if current_year == "すべて":
-            df_filtered = df.copy()
-            st.markdown("#### 📂 表示対象：**すべての年**")
-        else:
-            df_filtered = df[df["year"] == current_year].copy()
-            st.markdown(f"#### 📂 表示対象：**{current_year}年**")
-
-        # 新しい順に並べ替え
-        df_filtered = df_filtered.sort_values("鑑賞日_dt", ascending=False)
-
-        if df_filtered.empty:
-            st.info("この年の鑑賞記録はありません。")
-        else:
-            st.caption("※ タイトルをタップすると、上部に映画の詳細が表示されます（スマホ向けカード表示）")
-
-            # ▼ 1レコード＝1カードで縦に並べる（スマホ縦向き想定）
-            for i, row in df_filtered.iterrows():
-                with st.container():
-                    st.markdown("---")  # 区切り線
-
-                    title_val = row["タイトル"]
-                    rating_val = row.get("評価", "")
-
-                    # タイトル＋評価 → タップ用ボタン
-                    if st.button(f"🎬 {title_val}（{rating_val}）", key=f"title_btn_{current_year}_{i}"):
-                        tmdb_id = resolve_tmdb_id_by_title(
-                            title=title_val,
-                            release_date=row.get("公開日", "")
-                        )
-                        if tmdb_id:
-                            st.session_state.selected_movie_id = tmdb_id
-                            st.success(f"『{title_val}』の詳細を上部に表示します。")
-                            try:
-                                st.rerun()
-                            except Exception:
-                                st.experimental_rerun()
-                        else:
-                            st.warning("TMDBで該当作品を見つけられませんでした。")
-
-                    # その他の情報を縦に表示
-                    st.markdown(f"**鑑賞日**：{row.get('鑑賞日', '')}")
-                    st.markdown(f"**公開日**：{row.get('公開日', '')}")
-                    st.markdown(f"**監督名**：{row.get('監督名', '')}")
-
-                    comment = row.get("感想", "")
-                    if comment:
-                        with st.expander("✏ 感想を見る"):
-                            st.write(comment)
-
-except Exception as e:
-    st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
-
-
 
 
 
