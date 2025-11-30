@@ -138,7 +138,7 @@ with st.container():
                 st.error("TMDB検索でエラーが発生しました。")
             else:
                 data = res.json()
-                st.session_state.candidates = (data.get("results") or [])[:5]
+                st.session_state.candidates = (data.get("results") or [])[:10]
                 st.session_state.selected_movie_id = None
                 st.session_state.last_query = movie_title_input
 
