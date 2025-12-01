@@ -395,6 +395,53 @@ try:
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
 
+# =========================
+# 監督ランキング（本数×評価スコア）
+# =========================
+st.subheader("🏆 監督ランキング（本数 × 評価）")
+
+try:
+    records = load_records(sheet)
+    if not records:
+        st.write("まだ鑑賞記録がないため、ランキングを作成できません。")
+    else:
+        df = pd.DataFrame(records)
+
+        # 評価（例: "★★★★☆"） → 星の数（4 など）に変換
+        # 「★」の数を数えることで対応
+        df["星数"] = df["評価"].astype(str).str.count("★")
+
+        # 監督名が空の行は「不明」として扱う（お好みで除外も可）
+        df["監督名"] = df["監督名"].replace("", "不明").fillna("不明")
+
+        # 監督ごとに集計
+        grouped = (
+            df.groupby("監督名")
+              .agg(
+                  本数=("タイトル", "count"),
+                  合計スコア=("星数", "sum"),  # 本数×平均評価 と同じ意味
+              )
+        )
+
+        # 平均評価（見やすさ用）
+        grouped["平均評価"] = grouped["合計スコア"] / grouped["本数"]
+
+        # スコアの高い順に並べ替え
+        grouped = grouped.sort_values("合計スコア", ascending=False)
+
+        # インデックス（順位）を振り直す
+        grouped = grouped.reset_index()
+        grouped.index = range(1, len(grouped) + 1)
+        grouped.index.name = "順位"
+
+        # 上位10件だけ表示（必要なら調整可）
+        st.dataframe(
+            grouped[["監督名", "本数", "合計スコア", "平均評価"]].head(10),
+            use_container_width=True,
+        )
+
+except Exception as e:
+    st.error(f"監督ランキングの作成中にエラーが発生しました: {e}")
 
 
 
