@@ -34,24 +34,19 @@ scope = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
-gsa = require_secret(
-    "google_service_account",
-    "Secrets の [google_service_account] セクションにサービスアカウントJSONを設定してください。"
-)
 gsa_raw = require_secret(
     "google_service_account",
     "Secrets の [google_service_account] セクションにサービスアカウントJSONを設定してください。"
 )
 
-# ★ ここで普通のdictにコピーする
+# 通常のdictに変換（Secretsは書き換え不可のため）
 gsa = dict(gsa_raw)
 
-# private_key の改行を復元（Streamlit secrets対策）
+# private_key の改行を復元（Streamlit secrets 対策）
 if "private_key" in gsa and isinstance(gsa["private_key"], str):
     gsa["private_key"] = gsa["private_key"].replace("\\n", "\n")
 
 credentials = Credentials.from_service_account_info(gsa, scopes=scope)
-
 client = gspread.authorize(credentials)
 
 # =========================
@@ -63,12 +58,20 @@ def get_or_create_worksheet(spreadsheet_id: str, title: str):
         ws = ss.worksheet(title)
     except WorksheetNotFound:
         ws = ss.add_worksheet(title=title, rows="2000", cols="10")
+        # カラム名は固定
         ws.update("A1:F1", [[
             "鑑賞日", "タイトル", "公開日", "監督名", "評価", "感想"
         ]])
     return ws
 
 sheet = get_or_create_worksheet(SPREADSHEET_ID, SHEET_NAME)
+
+# =========================
+# レコード読み込み（キャッシュ）
+# =========================
+@st.cache_data(ttl=60)
+def load_records(_sheet):
+    return _sheet.get_all_records()
 
 # =========================
 # TMDB ID 解決（タイトルクリック用）
@@ -89,6 +92,7 @@ def resolve_tmdb_id_by_title(title: str, release_date: str | None = None) -> int
             "include_adult": "false",
             "language": "ja",
         },
+        timeout=20,
     )
     if res.status_code != 200:
         return None
@@ -117,17 +121,17 @@ if "selected_movie_id" not in st.session_state:
     st.session_state.selected_movie_id = None
 if "last_query" not in st.session_state:
     st.session_state.last_query = ""
-# 年フィルタ用
 if "year_filter" not in st.session_state:
-    st.session_state.year_filter = None   # 選択中の年（例: 2025）/ None
-if "year_visible" not in st.session_state:
-    st.session_state.year_visible = False # 一覧表示フラグ
+    st.session_state.year_filter = None  # 選択中の年（例: 2025）/ None
 
 # =========================
 # UI
 # =========================
 st.title("🎬 映画鑑賞記録")
 
+# -------------------------
+# 映画検索
+# -------------------------
 with st.container():
     st.subheader("映画タイトル検索")
     movie_title_input = st.text_input(
@@ -146,6 +150,7 @@ with st.container():
                     "include_adult": "false",
                     "language": "ja",
                 },
+                timeout=20,
             )
             if res.status_code != 200:
                 st.error("TMDB検索でエラーが発生しました。")
@@ -155,9 +160,9 @@ with st.container():
                 st.session_state.selected_movie_id = None
                 st.session_state.last_query = movie_title_input
 
-# =========================
+# -------------------------
 # 検索結果 → 1つ確定
-# =========================
+# -------------------------
 if st.session_state.candidates:
     st.subheader("🔎 検索結果")
     options = []
@@ -187,14 +192,15 @@ if st.session_state.candidates:
         st.session_state.selected_movie_id = selected_id
         st.success("作品を確定しました。下に詳細を表示します。")
 
-# =========================
+# -------------------------
 # 詳細表示（確定後）
-# =========================
+# -------------------------
 if st.session_state.selected_movie_id:
     movie_id = st.session_state.selected_movie_id
     d_res = requests.get(
         f"https://api.themoviedb.org/3/movie/{movie_id}",
         params={"api_key": TMDB_API_KEY, "language": "ja"},
+        timeout=20,
     )
     if d_res.status_code != 200:
         st.error("TMDB詳細でエラーが発生しました。")
@@ -214,6 +220,7 @@ if st.session_state.selected_movie_id:
     c_res = requests.get(
         f"https://api.themoviedb.org/3/movie/{movie_id}/credits",
         params={"api_key": TMDB_API_KEY, "language": "ja"},
+        timeout=20,
     )
     director_name = "N/A"
     cast = []
@@ -231,7 +238,7 @@ if st.session_state.selected_movie_id:
         if poster_path:
             st.image(
                 f"https://image.tmdb.org/t/p/w300{poster_path}",
-                caption="Movie Poster"
+                caption="Movie Poster",
             )
     with cols[1]:
         st.markdown(f"**概要**: {overview}")
@@ -247,9 +254,9 @@ if st.session_state.selected_movie_id:
         character = actor.get("character", "N/A")
         st.write(f"- {name} ({character})")
 
-    # =========================
-    # 鑑賞記録フォーム（シートのカラム名と合わせる）
-    # =========================
+    # -------------------------
+    # 鑑賞記録フォーム
+    # -------------------------
     with st.form("entry_form"):
         movie_day = st.date_input("鑑賞日", value=date.today())
         user_rating = st.selectbox(
@@ -274,24 +281,13 @@ if st.session_state.selected_movie_id:
 
                 # キャッシュをクリアして再実行 → 一覧を即時更新
                 st.cache_data.clear()
-                try:
-                    st.rerun()
-                except Exception:
-                    st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"保存中にエラーが発生しました: {e}")
 
 # =========================
-# 一覧表示（年別バナー＋カード表示・シンプル版）
+# 鑑賞記録（年別バナー＋カード表示）
 # =========================
-@st.cache_data(ttl=60)
-def load_records(_sheet):
-    return _sheet.get_all_records()
-
-# 年フィルタ（どの年を表示するか）だけをセッションに持つ
-if "year_filter" not in st.session_state:
-    st.session_state.year_filter = None  # 最初は未選択
-
 st.subheader("📖 鑑賞記録（年別）")
 
 try:
@@ -308,31 +304,21 @@ try:
         years = sorted(df["year"].dropna().unique(), reverse=True)
         years = [int(y) for y in years]
 
-        # ▼ 年バナー
         if years:
-            st.markdown("### 📅 年を選択")
+            st.markdown("### 📅 年を選択（同じ年をもう一度押すと非表示）")
             banner_cols = st.columns(len(years))
 
             for idx, y in enumerate(years):
                 with banner_cols[idx]:
-                    label = f"{y}年"
-                    # ボタン押下で「同じ年なら解除／別の年なら切り替え」
-                    if st.button(label, use_container_width=True, key=f"year_btn_{y}"):
-                        if st.session_state.year_filter == y:
-                            # 同じ年をもう一度 → 非表示に戻す
-                            st.session_state.year_filter = None
-                        else:
-                            # 別の年 → その年を表示対象にする
-                            st.session_state.year_filter = y
+                    if st.button(f"{y}年", use_container_width=True, key=f"year_btn_{y}"):
+                        # 同じ年なら解除／別の年なら切り替え
+                        st.session_state.year_filter = None if st.session_state.year_filter == y else y
 
-        # ▼ 一覧の表示／非表示
         current_year = st.session_state.year_filter
         if current_year is None:
             st.info("年のバナーをクリックすると、その年の鑑賞記録が表示されます。")
         else:
             df_filtered = df[df["year"] == current_year].copy()
-
-            # 新しい順に並べ替え
             df_filtered = df_filtered.sort_values("鑑賞日_dt", ascending=False)
 
             if df_filtered.empty:
@@ -341,19 +327,14 @@ try:
                 st.markdown(f"#### 📂 表示対象：**{current_year}年**")
                 st.caption("※ タイトルをタップすると、上部に映画の詳細が表示されます（スマホ向けカード表示）")
 
-                # ▼ 1レコード＝1カードで縦に並べる
                 for i, row in df_filtered.iterrows():
                     with st.container():
-                        st.markdown("---")  # 区切り線
+                        st.markdown("---")
 
                         title_val = row["タイトル"]
                         rating_val = row.get("評価", "")
 
-                        # タイトル＋評価 → タップ用ボタン
-                        if st.button(
-                            f"🎬 {title_val}（{rating_val}）",
-                            key=f"title_btn_{current_year}_{i}",
-                        ):
+                        if st.button(f"🎬 {title_val}（{rating_val}）", key=f"title_btn_{current_year}_{i}"):
                             tmdb_id = resolve_tmdb_id_by_title(
                                 title=title_val,
                                 release_date=row.get("公開日", "")
@@ -361,14 +342,10 @@ try:
                             if tmdb_id:
                                 st.session_state.selected_movie_id = tmdb_id
                                 st.success(f"『{title_val}』の詳細を上部に表示します。")
-                                try:
-                                    st.rerun()
-                                except Exception:
-                                    st.experimental_rerun()
+                                st.rerun()
                             else:
                                 st.warning("TMDBで該当作品を見つけられませんでした。")
 
-                        # その他の情報を縦に表示
                         st.markdown(f"**鑑賞日**：{row.get('鑑賞日', '')}")
                         st.markdown(f"**公開日**：{row.get('公開日', '')}")
                         st.markdown(f"**監督名**：{row.get('監督名', '')}")
@@ -378,33 +355,6 @@ try:
                             with st.expander("✏ 感想を見る"):
                                 st.write(comment)
 
-except Exception as e:
-    st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
-
-# =========================
-# 一覧表示（キャッシュ付き）
-# =========================
-@st.cache_data(ttl=60)
-def load_records(_sheet):
-    return _sheet.get_all_records()
-
-st.subheader("📖 鑑賞記録（全記録）")
-try:
-    records = load_records(sheet)
-    if records:
-        df = pd.DataFrame(records)
-
-        # 日付をdatetime化して降順ソート（不正/空は末尾へ）
-        df["_sort_key"] = pd.to_datetime(df["鑑賞日"], errors="coerce")
-        df = df.sort_values("_sort_key", ascending=False, na_position="last").drop(columns="_sort_key")
-
-        # 1 始まりの採番を左端に表示
-        df.index = range(1, len(df) + 1)
-        df.index.name = "No."
-
-        st.dataframe(df, use_container_width=True)
-    else:
-        st.write("まだ鑑賞記録はありません。")
 except Exception as e:
     st.error(f"スプレッドシートの読み込み中にエラーが発生しました: {e}")
 
@@ -420,34 +370,25 @@ try:
     else:
         df = pd.DataFrame(records)
 
-        # 評価（例: "★★★★☆"） → 星の数（4 など）に変換
-        # 「★」の数を数えることで対応
+        # 評価（例: "★★★★☆"） → 星の数（4 など）に変換（「★」の数を数える）
         df["星数"] = df["評価"].astype(str).str.count("★")
 
-        # 監督名が空の行は「不明」として扱う（お好みで除外も可）
+        # 監督名が空の行は「不明」として扱う
         df["監督名"] = df["監督名"].replace("", "不明").fillna("不明")
 
-        # 監督ごとに集計
         grouped = (
             df.groupby("監督名")
               .agg(
                   本数=("タイトル", "count"),
-                  合計スコア=("星数", "sum"),  # 本数×平均評価 と同じ意味
+                  合計スコア=("星数", "sum"),
               )
         )
-
-        # 平均評価（見やすさ用）
         grouped["平均評価"] = grouped["合計スコア"] / grouped["本数"]
 
-        # スコアの高い順に並べ替え
-        grouped = grouped.sort_values("合計スコア", ascending=False)
-
-        # インデックス（順位）を振り直す
-        grouped = grouped.reset_index()
+        grouped = grouped.sort_values("合計スコア", ascending=False).reset_index()
         grouped.index = range(1, len(grouped) + 1)
         grouped.index.name = "順位"
 
-        # 上位10件だけ表示（必要なら調整可）
         st.dataframe(
             grouped[["監督名", "本数", "合計スコア", "平均評価"]].head(10),
             use_container_width=True,
