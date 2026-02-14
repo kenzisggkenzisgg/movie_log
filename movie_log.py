@@ -38,11 +38,20 @@ gsa = require_secret(
     "google_service_account",
     "Secrets の [google_service_account] セクションにサービスアカウントJSONを設定してください。"
 )
-# private_key の改行を復元（Streamlit secrets 対策）
+gsa_raw = require_secret(
+    "google_service_account",
+    "Secrets の [google_service_account] セクションにサービスアカウントJSONを設定してください。"
+)
+
+# ★ ここで普通のdictにコピーする
+gsa = dict(gsa_raw)
+
+# private_key の改行を復元（Streamlit secrets対策）
 if "private_key" in gsa and isinstance(gsa["private_key"], str):
     gsa["private_key"] = gsa["private_key"].replace("\\n", "\n")
 
-credentials = Credentials.from_service_account_info(dict(gsa), scopes=scope)
+credentials = Credentials.from_service_account_info(gsa, scopes=scope)
+
 client = gspread.authorize(credentials)
 
 # =========================
